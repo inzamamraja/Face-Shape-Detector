@@ -44,4 +44,15 @@ self.addEventListener("fetch", event => {
         .catch(err => console.error("Sync failed:", err))
     );
   }
-});});
+});
+  self.addEventListener("sync", (event) => {
+    if (event.tag === "sync-data") {
+        event.waitUntil(syncData());
+    }
+});
+
+async function syncData() {
+    console.log("Syncing data in the background...");
+    // Implement logic for retrying failed network requests if necessary
+}
+});
