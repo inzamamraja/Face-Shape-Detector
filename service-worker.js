@@ -33,4 +33,15 @@ self.addEventListener("fetch", event => {
       return response || fetch(event.request);
     })
   );
-});
+  self.addEventListener("sync", event => {
+  if (event.tag === "sync-data") {
+    event.waitUntil(
+      fetch("/sync-endpoint")
+        .then(response => response.json())
+        .then(data => {
+          console.log("Data synchronized:", data);
+        })
+        .catch(err => console.error("Sync failed:", err))
+    );
+  }
+});});
