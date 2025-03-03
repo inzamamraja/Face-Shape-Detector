@@ -1,0 +1,2330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <title>Enhanced Face Shape Detector</title>
+    <!-- Load TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <!-- Load MediaPipe FaceMesh -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"></script>
+    <!-- Chart.js for symmetry visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #5D5CDE;
+            --primary-hover: #4a49b0;
+            --success-color: #4CAF50;
+            --warning-color: #FFC107;
+            --error-color: #F44336;
+            --text-color: #333333;
+            --text-secondary: #666666;
+            --bg-color: #FFFFFF;
+            --bg-secondary: #F5F5F5;
+            --border-color: #DDDDDD;
+            --card-bg: #FFFFFF;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --overlay-bg: rgba(255, 255, 255, 0.8);
+            --animation-speed: 0.3s;
+            --face-oval: rgba(93, 92, 222, 0.8);
+            --forehead-color: rgba(244, 67, 54, 0.8);
+            --cheekbone-color: rgba(76, 175, 80, 0.8);
+            --jawline-color: rgba(255, 193, 7, 0.8);
+            --chin-color: rgba(156, 39, 176, 0.8);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text-color: #F5F5F5;
+                --text-secondary: #BBBBBB;
+                --bg-color: #181818;
+                --bg-secondary: #252525;
+                --border-color: #444444;
+                --card-bg: #222222;
+                --shadow-color: rgba(0, 0, 0, 0.3);
+                --overlay-bg: rgba(0, 0, 0, 0.8);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color var(--animation-speed), color var(--animation-speed);
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .app-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .app-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 8px;
+        }
+
+        .app-subtitle {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            flex: 1;
+        }
+
+        .input-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 12px 18px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--animation-speed);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-width: 140px;
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px var(--shadow-color);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background-color: var(--bg-secondary);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--border-color);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .visualization-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            aspect-ratio: 4/3;
+            max-width: 100%;
+            margin: 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 16px var(--shadow-color);
+            background-color: var(--card-bg);
+        }
+
+        #video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        #uploaded-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+
+        #output-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+
+        .results-container {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 8px var(--shadow-color);
+            margin-top: 16px;
+        }
+
+        .result-header {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .face-shape-result {
+            font-size: 24px;
+            font-weight: 700;
+            text-align: center;
+            margin: 16px 0;
+            padding: 12px;
+            border-radius: 8px;
+            background-color: var(--bg-secondary);
+            color: var(--primary-color);
+            animation: pulse 2s infinite;
+        }
+
+        .measurements-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .measurement-card {
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .measurement-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .measurement-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--overlay-bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 5px solid var(--primary-color);
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            animation: spinner 1s linear infinite;
+        }
+
+        .loading-text {
+            margin-top: 16px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .symmetry-container {
+            margin-top: 20px;
+        }
+
+        .symmetry-canvas-container {
+            width: 100%;
+            height: 200px;
+            margin-top: 12px;
+        }
+
+        .tab-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+
+        .tab-button {
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--animation-speed);
+            border: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+            color: var(--text-color);
+            white-space: nowrap;
+        }
+
+        .tab-button.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .face-shape-characteristics {
+            margin-top: 20px;
+        }
+
+        .face-shape-card {
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .face-shape-name {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--primary-color);
+        }
+
+        .face-shape-description {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .tips-container {
+            margin-top: 20px;
+        }
+
+        .tip-card {
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .tip-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--primary-color);
+        }
+
+        .tip-description {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .help-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin: 12px 0;
+        }
+
+        .error-message {
+            background-color: var(--error-color);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+            display: none;
+        }
+
+        .status-indicator {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+            background-color: var(--warning-color);
+            color: black;
+            z-index: 15;
+        }
+
+        .status-indicator.active {
+            background-color: var(--success-color);
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 25;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            box-shadow: 0 4px 8px var(--shadow-color);
+            border: 1px solid var(--border-color);
+            font-size: 12px;
+            font-weight: normal;
+            line-height: 1.4;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle-label {
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .toggle-container {
+            position: relative;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle-container input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border-color);
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: var(--primary-color);
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+
+        .landmark-key {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 16px;
+            margin-bottom: 16px;
+            justify-content: center;
+        }
+
+        .landmark-key-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background-color: var(--bg-secondary);
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .landmark-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+        }
+
+        .calibration-container {
+            margin-top: 20px;
+            padding: 16px;
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+        }
+
+        .calibration-slider {
+            width: 100%;
+            margin: 16px 0;
+        }
+
+        .calibration-slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+        }
+
+        .slider-value {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .calibration-btn {
+            display: block;
+            margin: 0 auto;
+        }
+
+        .score-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .score-item {
+            padding: 8px 12px;
+            border-radius: 20px;
+            background-color: var(--bg-secondary);
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .debug-panel {
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 16px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .face-shape-examples {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .shape-example {
+            width: 120px;
+            text-align: center;
+        }
+
+        .shape-example-img {
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            overflow: hidden;
+            background-color: var(--bg-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+        }
+
+        .shape-example-img img {
+            width: 80%;
+            height: auto;
+        }
+
+        .shape-example-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        @keyframes spinner {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(93, 92, 222, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(93, 92, 222, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(93, 92, 222, 0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                padding: 24px;
+            }
+
+            .app-title {
+                font-size: 32px;
+            }
+
+            .app-subtitle {
+                font-size: 18px;
+            }
+
+            .visualization-container {
+                max-width: 640px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .input-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .btn {
+                width: 100%;
+            }
+
+            .visualization-container {
+                aspect-ratio: 3/4;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="app-header">
+            <h1 class="app-title">Enhanced Face Shape Detector</h1>
+            <p class="app-subtitle">Analyze your face shape using advanced AI technology</p>
+        </div>
+
+        <div class="main-content">
+            <div class="input-controls">
+                <button id="start-camera" class="btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    Start Camera
+                </button>
+                <button id="upload-button" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Upload Image
+                </button>
+                <input type="file" id="file-input" class="file-input" accept="image/*">
+            </div>
+
+            <div class="visualization-container">
+                <video id="video-feed" playsinline></video>
+                <img id="uploaded-image" alt="Uploaded Image">
+                <canvas id="output-canvas"></canvas>
+                <div class="status-indicator">Ready</div>
+                <div id="loading-overlay" class="loading-overlay" style="display: none;">
+                    <div class="spinner"></div>
+                    <div class="loading-text">Processing...</div>
+                </div>
+            </div>
+
+            <div class="landmark-key">
+                <div class="landmark-key-item">
+                    <div class="landmark-color" style="background-color: var(--face-oval);"></div>
+                    <span>Face Outline</span>
+                </div>
+                <div class="landmark-key-item">
+                    <div class="landmark-color" style="background-color: var(--forehead-color);"></div>
+                    <span>Forehead</span>
+                </div>
+                <div class="landmark-key-item">
+                    <div class="landmark-color" style="background-color: var(--cheekbone-color);"></div>
+                    <span>Cheekbones</span>
+                </div>
+                <div class="landmark-key-item">
+                    <div class="landmark-color" style="background-color: var(--jawline-color);"></div>
+                    <span>Jawline</span>
+                </div>
+                <div class="landmark-key-item">
+                    <div class="landmark-color" style="background-color: var(--chin-color);"></div>
+                    <span>Chin</span>
+                </div>
+            </div>
+
+            <div id="error-message" class="error-message"></div>
+
+            <div class="results-container" id="results-container">
+                <div class="result-header">
+                    <span>Analysis Results</span>
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <div class="toggle-switch">
+                            <span class="toggle-label">Show All Landmarks</span>
+                            <label class="toggle-container">
+                                <input type="checkbox" id="show-landmarks-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <button id="capture-button" class="btn btn-secondary" style="min-width: auto; padding: 8px 12px; font-size: 14px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Analyze
+                        </button>
+                    </div>
+                </div>
+
+                <div class="tab-buttons">
+                    <button class="tab-button active" data-tab="face-shape">Face Shape</button>
+                    <button class="tab-button" data-tab="measurements">Measurements</button>
+                    <button class="tab-button" data-tab="symmetry">Symmetry Analysis</button>
+                    <button class="tab-button" data-tab="characteristics">Characteristics</button>
+                    <button class="tab-button" data-tab="tips">Style Tips</button>
+                    <button class="tab-button" data-tab="calibration">Advanced</button>
+                </div>
+
+                <div id="face-shape-tab" class="tab-content active">
+                    <div class="face-shape-result" id="face-shape-result">
+                        Waiting for analysis...
+                    </div>
+                    <p class="help-text">Start the camera or upload an image to detect your face shape</p>
+                    
+                    <div class="score-container" id="shape-scores">
+                        <!-- Shape scores will be displayed here -->
+                    </div>
+                </div>
+
+                <div id="measurements-tab" class="tab-content">
+                    <div class="measurements-grid">
+                        <div class="measurement-card">
+                            <div class="measurement-title">
+                                Face Width-to-Height Ratio
+                                <span class="tooltip">ⓘ
+                                    <span class="tooltip-text">The ratio between the width and height of your face</span>
+                                </span>
+                            </div>
+                            <div class="measurement-value" id="face-ratio">—</div>
+                        </div>
+                        <div class="measurement-card">
+                            <div class="measurement-title">
+                                Jawline Angle
+                                <span class="tooltip">ⓘ
+                                    <span class="tooltip-text">The angle of your jawline in degrees</span>
+                                </span>
+                            </div>
+                            <div class="measurement-value" id="jawline-angle">—</div>
+                        </div>
+                        <div class="measurement-card">
+                            <div class="measurement-title">
+                                Cheekbone Width
+                                <span class="tooltip">ⓘ
+                                    <span class="tooltip-text">The width of your cheekbones relative to face width</span>
+                                </span>
+                            </div>
+                            <div class="measurement-value" id="cheekbone-width">—</div>
+                        </div>
+                        <div class="measurement-card">
+                            <div class="measurement-title">
+                                Forehead Width
+                                <span class="tooltip">ⓘ
+                                    <span class="tooltip-text">The width of your forehead relative to face width</span>
+                                </span>
+                            </div>
+                            <div class="measurement-value" id="forehead-width">—</div>
+                        </div>
+                        <div class="measurement-card">
+                            <div class="measurement-title">
+                                Chin Shape
+                                <span class="tooltip">ⓘ
+                                    <span class="tooltip-text">The pointiness of your chin</span>
+                                </span>
+                            </div>
+                            <div class="measurement-value" id="chin-shape">—</div>
+                        </div>
+                        <div class="measurement-card">
+                            <div class="measurement-title">
+                                Face Length
+                                <span class="tooltip">ⓘ
+                                    <span class="tooltip-text">The overall length of your face</span>
+                                </span>
+                            </div>
+                            <div class="measurement-value" id="face-length">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="symmetry-tab" class="tab-content">
+                    <div class="symmetry-container">
+                        <h3>Face Symmetry Analysis</h3>
+                        <p class="help-text">Symmetry score shows how balanced the left and right sides of your face are</p>
+                        <div class="measurement-card">
+                            <div class="measurement-title">Overall Symmetry Score</div>
+                            <div class="measurement-value" id="symmetry-score">—</div>
+                        </div>
+                        <div class="symmetry-canvas-container">
+                            <canvas id="symmetry-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="characteristics-tab" class="tab-content">
+                    <div class="face-shape-characteristics">
+                        <h3>Face Shape Characteristics</h3>
+                        <div class="face-shape-card">
+                            <div class="face-shape-name">Oval</div>
+                            <div class="face-shape-description">The oval face shape is characterized by balanced proportions with the forehead slightly wider than the chin. The face length is about 1.5 times the width, with soft curves and no sharp angles.</div>
+                        </div>
+                        <div class="face-shape-card">
+                            <div class="face-shape-name">Round</div>
+                            <div class="face-shape-description">Round faces have similar width and height with full cheeks and a rounded chin. The widest part is at the cheekbones with soft curves throughout the face.</div>
+                        </div>
+                        <div class="face-shape-card">
+                            <div class="face-shape-name">Square</div>
+                            <div class="face-shape-description">Square faces have a strong jawline with a square chin and forehead of similar width. The sides of the face are straight, and the measurements across the forehead, cheekbones, and jaw are similar.</div>
+                        </div>
+                        <div class="face-shape-card">
+                            <div class="face-shape-name">Heart</div>
+                            <div class="face-shape-description">Heart-shaped faces have a wide forehead and high cheekbones that taper to a narrow, sometimes pointed chin. The widest part of the face is at the forehead.</div>
+                        </div>
+                        <div class="face-shape-card">
+                            <div class="face-shape-name">Diamond</div>
+                            <div class="face-shape-description">Diamond faces have high, dramatic cheekbones with a narrow forehead and jawline. The widest part of the face is at the cheekbones, with a pointed chin.</div>
+                        </div>
+                        <div class="face-shape-card">
+                            <div class="face-shape-name">Oblong/Rectangle</div>
+                            <div class="face-shape-description">Oblong faces are longer than they are wide, with a long, straight cheek line. The forehead, cheekbones, and jawline are typically similar in width with a more rectangular appearance.</div>
+                        </div>
+                        <div class="face-shape-card">
+                            <div class="face-shape-name">Triangle</div>
+                            <div class="face-shape-description">Triangle faces have a narrow forehead that widens at the cheek and jawline. The jaw is the widest part of the face, creating a strong, angular appearance.</div>
+                        </div>
+                        
+                        <div class="face-shape-examples">
+                            <div class="shape-example">
+                                <div class="shape-example-img">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+                                        <rect x="20" y="20" width="60" height="60" stroke="#FF4081" stroke-width="3" fill="none"/>
+                                    </svg>
+                                </div>
+                                <div class="shape-example-name">Square</div>
+                            </div>
+                            <div class="shape-example">
+                                <div class="shape-example-img">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+                                        <circle cx="50" cy="50" r="30" stroke="#FF4081" stroke-width="3" fill="none"/>
+                                    </svg>
+                                </div>
+                                <div class="shape-example-name">Round</div>
+                            </div>
+                            <div class="shape-example">
+                                <div class="shape-example-img">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+                                        <ellipse cx="50" cy="50" rx="25" ry="35" stroke="#FF4081" stroke-width="3" fill="none"/>
+                                    </svg>
+                                </div>
+                                <div class="shape-example-name">Oval</div>
+                            </div>
+                            <div class="shape-example">
+                                <div class="shape-example-img">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+                                        <rect x="25" y="15" width="50" height="70" stroke="#FF4081" stroke-width="3" fill="none"/>
+                                    </svg>
+                                </div>
+                                <div class="shape-example-name">Rectangle</div>
+                            </div>
+                            <div class="shape-example">
+                                <div class="shape-example-img">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+                                        <polygon points="50,15 85,85 15,85" stroke="#FF4081" stroke-width="3" fill="none"/>
+                                    </svg>
+                                </div>
+                                <div class="shape-example-name">Triangle</div>
+                            </div>
+                            <div class="shape-example">
+                                <div class="shape-example-img">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+                                        <polygon points="50,15 15,85 85,85" stroke="#FF4081" stroke-width="3" fill="none"/>
+                                    </svg>
+                                </div>
+                                <div class="shape-example-name">Heart</div>
+                            </div>
+                            <div class="shape-example">
+                                <div class="shape-example-img">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+                                        <polygon points="50,15 15,50 50,85 85,50" stroke="#FF4081" stroke-width="3" fill="none"/>
+                                    </svg>
+                                </div>
+                                <div class="shape-example-name">Diamond</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tips-tab" class="tab-content">
+                    <div class="tips-container">
+                        <h3>Style Tips Based on Face Shape</h3>
+                        <div id="dynamic-tips">
+                            <p class="help-text">Complete the face shape analysis to see personalized style tips</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="calibration-tab" class="tab-content">
+                    <div class="calibration-container">
+                        <h3>Advanced Detection Settings</h3>
+                        <p class="help-text">Adjust these settings if your face shape is incorrectly detected</p>
+                        
+                        <div class="calibration-slider-container">
+                            <div class="slider-label">
+                                <span>Forehead Detection Height</span>
+                                <span class="slider-value" id="forehead-height-value">65%</span>
+                            </div>
+                            <input type="range" min="50" max="80" value="65" class="calibration-slider" id="forehead-height-slider">
+                        </div>
+                        
+                        <div class="calibration-slider-container">
+                            <div class="slider-label">
+                                <span>Face Width Point</span>
+                                <span class="slider-value" id="face-width-value">60%</span>
+                            </div>
+                            <input type="range" min="40" max="80" value="60" class="calibration-slider" id="face-width-slider">
+                        </div>
+                        
+                        <div class="calibration-slider-container">
+                            <div class="slider-label">
+                                <span>Face Length Importance</span>
+                                <span class="slider-value" id="face-length-value">100%</span>
+                            </div>
+                            <input type="range" min="80" max="120" value="100" class="calibration-slider" id="face-length-slider">
+                        </div>
+                        
+                        <div class="toggle-switch" style="margin-top: 16px; margin-bottom: 16px;">
+                            <span class="toggle-label">Show Debug Info</span>
+                            <label class="toggle-container">
+                                <input type="checkbox" id="debug-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <button id="reset-calibration" class="btn btn-secondary calibration-btn">Reset to Defaults</button>
+                    </div>
+                    
+                    <div id="debug-panel" class="debug-panel"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // Global Variables and Constants
+        // ==========================================
+        const videoElement = document.getElementById('video-feed');
+        const imageElement = document.getElementById('uploaded-image');
+        const canvasElement = document.getElementById('output-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const fileInput = document.getElementById('file-input');
+        const startCameraButton = document.getElementById('start-camera');
+        const uploadButton = document.getElementById('upload-button');
+        const captureButton = document.getElementById('capture-button');
+        const errorMessage = document.getElementById('error-message');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const statusIndicator = document.querySelector('.status-indicator');
+        const faceShapeResult = document.getElementById('face-shape-result');
+        const symmetryChartCanvas = document.getElementById('symmetry-chart');
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const showLandmarksToggle = document.getElementById('show-landmarks-toggle');
+        const shapeScoresContainer = document.getElementById('shape-scores');
+        const debugToggle = document.getElementById('debug-toggle');
+        const debugPanel = document.getElementById('debug-panel');
+        const foreheadHeightSlider = document.getElementById('forehead-height-slider');
+        const foreheadHeightValue = document.getElementById('forehead-height-value');
+        const faceWidthSlider = document.getElementById('face-width-slider');
+        const faceWidthValue = document.getElementById('face-width-value');
+        const faceLengthSlider = document.getElementById('face-length-slider');
+        const faceLengthValue = document.getElementById('face-length-value');
+        const resetCalibrationButton = document.getElementById('reset-calibration');
+
+        // Measurement display elements
+        const faceRatioElement = document.getElementById('face-ratio');
+        const jawlineAngleElement = document.getElementById('jawline-angle');
+        const cheekboneWidthElement = document.getElementById('cheekbone-width');
+        const foreheadWidthElement = document.getElementById('forehead-width');
+        const chinShapeElement = document.getElementById('chin-shape');
+        const faceLengthElement = document.getElementById('face-length');
+        const symmetryScoreElement = document.getElementById('symmetry-score');
+        const dynamicTipsElement = document.getElementById('dynamic-tips');
+
+        // Face mesh model and camera variables
+        let faceMesh;
+        let camera;
+        let isModelReady = false;
+        let isProcessing = false;
+        let inputMode = 'none'; // 'camera' or 'image'
+        let symmetryChart = null;
+        let lastDetectionTime = 0;
+        let showAllLandmarks = false;
+        let debugMode = false;
+        let foreheadHeightPercent = 65; // Default value
+        let faceWidthPercent = 60; // Default value
+        let faceLengthImportance = 100; // Default value as percentage
+        const DETECTION_THROTTLE_MS = 100; // Throttle face detection to once every 100ms
+        
+        // Enhanced Facial Landmarks for Better Detection
+        // Full face oval contour
+        const FACE_OVAL_INDICES = [
+            10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+            397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+            172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
+        ];
+
+        // Multiple sets of forehead landmarks for robust detection
+        const FOREHEAD_TOP_INDICES = [10, 338, 297, 332];  // Top of forehead
+        const FOREHEAD_HAIRLINE_INDICES = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46, 
+                                          334, 333, 300, 293, 334, 296, 336, 285, 295, 282]; // Hairline points
+        const FOREHEAD_MID_INDICES = [9, 8, 7, 6, 5, 4, 3, 2, 1, 337, 336, 335, 334, 333, 332, 331, 330, 329, 328]; // Mid forehead
+        
+        // Enhanced cheekbone detection indices
+        const CHEEKBONE_INDICES = [
+            123, 50, 101, 100, 47, 114, 
+            352, 280, 330, 329, 277, 343,
+            203, 206, 203, 204, 205,  // Left cheek
+            423, 426, 427, 428, 429   // Right cheek
+        ];
+        
+        // Enhanced jawline detection indices
+        const JAW_INDICES = [
+            // Lower jawline contour
+            200, 199, 175, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
+            // Additional jawline points 
+            177, 218, 216, 215, 85, 18, 17, 83, 182, 16, 15
+        ];
+        
+        // Enhanced chin detection indices
+        const CHIN_INDICES = [
+            // Chin contour
+            17, 18, 200, 199, 201, 202, 204, 207, 208, 
+            175, 152, 377, 400, 378, 379, 365, 397,
+            // Additional chin points for shape detection
+            176, 193, 192, 191, 90, 94, 19, 20, 186, 189
+        ];
+
+        // Face shape classifier thresholds and model features
+        const FACE_SHAPE_FEATURES = {
+            FACE_RATIO: 'faceRatio',               // Width to height ratio
+            JAWLINE_ANGLE: 'jawlineAngle',         // Angle of jawline
+            CHEEKBONE_WIDTH: 'cheekboneWidth',     // Relative width of cheekbones
+            FOREHEAD_WIDTH: 'foreheadWidth',       // Relative width of forehead
+            CHIN_SHAPE: 'chinShape',               // Pointiness of chin
+            FACE_LENGTH: 'faceLength',             // Overall face length
+            JAW_WIDTH: 'jawWidth',                 // Width of jaw relative to face
+            HAIRLINE_SHAPE: 'hairlineShape',       // Shape of hairline (straight vs rounded)
+            SIDE_SLOPE: 'sideSlope'                // Slope of sides of face
+        };
+
+        // Face shape characteristics and classification rules with improved criteria
+        // MAJOR UPDATE: Adjusted for better detection of oblong/rectangle faces
+        const FACE_SHAPES = {
+            OVAL: {
+                name: 'Oval',
+                description: 'Balanced proportions with gently curved jawline',
+                criteria: {
+                    [FACE_SHAPE_FEATURES.FACE_RATIO]: { min: 1.3, max: 1.6 },
+                    [FACE_SHAPE_FEATURES.JAWLINE_ANGLE]: { min: 125, max: 150 },
+                    [FACE_SHAPE_FEATURES.CHIN_SHAPE]: { min: 0.2, max: 0.5 },
+                    [FACE_SHAPE_FEATURES.CHEEKBONE_WIDTH]: { min: 0.85, max: 0.95 }
+                },
+                weight: 1.1 // Slight boost for oval
+            },
+            ROUND: {
+                name: 'Round',
+                description: 'Similar width and height with soft curves',
+                criteria: {
+                    [FACE_SHAPE_FEATURES.FACE_RATIO]: { min: 0.95, max: 1.2 },
+                    [FACE_SHAPE_FEATURES.JAWLINE_ANGLE]: { min: 130, max: 165 },
+                    [FACE_SHAPE_FEATURES.CHEEKBONE_WIDTH]: { min: 0.85, max: 1.0 },
+                    [FACE_SHAPE_FEATURES.CHIN_SHAPE]: { min: 0.15, max: 0.35 } // Round chin
+                },
+                weight: 1.0
+            },
+            SQUARE: {
+                name: 'Square',
+                description: 'Strong jawline with similar width at forehead and jaw',
+                criteria: {
+                    [FACE_SHAPE_FEATURES.FACE_RATIO]: { min: 0.95, max: 1.2 },     // Lower max ratio to avoid overlap with oblong 
+                    [FACE_SHAPE_FEATURES.JAWLINE_ANGLE]: { min: 90, max: 120 },    // More angular jawline
+                    [FACE_SHAPE_FEATURES.FOREHEAD_WIDTH]: { min: 0.85, max: 1.0 },
+                    [FACE_SHAPE_FEATURES.JAW_WIDTH]: { min: 0.85, max: 1.0 }       // Strong, wide jawline
+                },
+                weight: 0.95 // Slightly reduce to prevent misclassification with oblong
+            },
+            HEART: {
+                name: 'Heart',
+                description: 'Wide forehead tapering to a narrower chin',
+                criteria: {
+                    [FACE_SHAPE_FEATURES.FOREHEAD_WIDTH]: { min: 0.9, max: 1.05 },
+                    [FACE_SHAPE_FEATURES.CHIN_SHAPE]: { min: 0.4, max: 0.7 },
+                    [FACE_SHAPE_FEATURES.JAWLINE_ANGLE]: { min: 120, max: 155 },
+                    [FACE_SHAPE_FEATURES.JAW_WIDTH]: { min: 0.6, max: 0.85 } // Narrower jaw than forehead
+                },
+                weight: 1.0
+            },
+            DIAMOND: {
+                name: 'Diamond',
+                description: 'High cheekbones with narrower forehead and jawline',
+                criteria: {
+                    [FACE_SHAPE_FEATURES.CHEEKBONE_WIDTH]: { min: 0.95, max: 1.1 }, // Widest at cheekbones
+                    [FACE_SHAPE_FEATURES.FOREHEAD_WIDTH]: { min: 0.7, max: 0.85 },  // Narrower forehead
+                    [FACE_SHAPE_FEATURES.CHIN_SHAPE]: { min: 0.45, max: 0.75 },     // More pointed chin
+                    [FACE_SHAPE_FEATURES.JAW_WIDTH]: { min: 0.7, max: 0.85 }        // Narrower jaw
+                },
+                weight: 0.8 // Reduce prevalence of diamond misclassification
+            },
+            OBLONG: {
+                name: 'Oblong/Rectangle',
+                description: 'Longer than wide with straight cheek lines',
+                criteria: {
+                    [FACE_SHAPE_FEATURES.FACE_RATIO]: { min: 1.45, max: 2.3 },    // Lower min ratio for better detection
+                    [FACE_SHAPE_FEATURES.FACE_LENGTH]: { min: 0.8, max: 1.0 },     // Focus on length
+                    [FACE_SHAPE_FEATURES.JAWLINE_ANGLE]: { min: 105, max: 145 },   // Straighter jawline than oval
+                    [FACE_SHAPE_FEATURES.SIDE_SLOPE]: { min: 0, max: 0.4 }         // Straighter sides than oval
+                },
+                weight: 1.15 // Boosted to better detect oblong faces
+            },
+            TRIANGLE: {
+                name: 'Triangle',
+                description: 'Narrow forehead widening at the jawline',
+                criteria: {
+                    [FACE_SHAPE_FEATURES.FOREHEAD_WIDTH]: { min: 0.7, max: 0.85 }, // Narrower forehead
+                    [FACE_SHAPE_FEATURES.JAW_WIDTH]: { min: 0.9, max: 1.05 },      // Wider jaw than forehead
+                    [FACE_SHAPE_FEATURES.JAWLINE_ANGLE]: { min: 90, max: 120 },
+                    [FACE_SHAPE_FEATURES.CHIN_SHAPE]: { min: 0.1, max: 0.35 }       // Broader chin
+                },
+                weight: 0.9
+            }
+        };
+
+        // Style tips for each face shape
+        const STYLE_TIPS = {
+            'Oval': [
+                { title: 'Hairstyles', description: 'Oval faces can wear virtually any hairstyle. Try long layers, bobs, or pixie cuts to highlight your balanced features.' },
+                { title: 'Glasses', description: 'Almost any frame shape works well. Experiment with angular frames to add definition or round frames for a softer look.' },
+                { title: 'Makeup', description: 'Focus on enhancing your natural features with light contouring to maintain your balanced proportions.' }
+            ],
+            'Round': [
+                { title: 'Hairstyles', description: 'Choose hairstyles with volume at the crown and layers that fall below the chin. Side-swept bangs and asymmetrical cuts help elongate your face.' },
+                { title: 'Glasses', description: 'Angular and rectangular frames help add definition and make your face appear longer.' },
+                { title: 'Makeup', description: 'Use contouring along the temples and jawline to add definition. Highlight the center of your forehead and chin to create the illusion of length.' }
+            ],
+            'Square': [
+                { title: 'Hairstyles', description: 'Soften your angular features with layered cuts, side-swept bangs, and styles with volume on top.' },
+                { title: 'Glasses', description: 'Round or oval frames help balance your strong jawline. Avoid frames that are too angular or boxy.' },
+                { title: 'Makeup', description: 'Soften your jawline with bronzer and highlight your cheekbones. Round brows can balance strong features.' }
+            ],
+            'Heart': [
+                { title: 'Hairstyles', description: 'Balance your proportions with chin-length bobs, layers around the jaw, or styles with volume at the bottom.' },
+                { title: 'Glasses', description: 'Frames that are wider at the bottom help balance your features. Aviators or cat-eye styles work well.' },
+                { title: 'Makeup', description: 'Use contour at the temples and highlight the center of the forehead and chin. Keep blush soft and focused on the apples of your cheeks.' }
+            ],
+            'Diamond': [
+                { title: 'Hairstyles', description: 'Styles with volume at the forehead and chin, such as side-swept bangs or layered cuts that add width to these areas.' },
+                { title: 'Glasses', description: 'Frames with detailing or thickness at the brow line, like cat-eye or browline styles, complement your angular features.' },
+                { title: 'Makeup', description: 'Highlight your forehead and jawline while using lighter contour on your cheekbones to balance your face shape.' }
+            ],
+            'Oblong/Rectangle': [
+                { title: 'Hairstyles', description: 'Styles with volume at the sides, such as layered cuts, waves, or curls. Try side-swept bangs and avoid excessive height on top.' },
+                { title: 'Glasses', description: 'Wider frames with decorative temples add width. Round or oversized square frames with strong horizontal elements work well.' },
+                { title: 'Makeup', description: 'Apply blush horizontally across the cheeks to add width. Contour at the chin and hairline to reduce the appearance of length.' }
+            ],
+            'Triangle': [
+                { title: 'Hairstyles', description: 'Add volume at the crown and temples with layers, side-swept bangs, or styles that are fuller around the forehead area.' },
+                { title: 'Glasses', description: 'Top-heavy frames or designs with decorative elements on the upper portion help balance your wider jawline.' },
+                { title: 'Makeup', description: 'Contour along the jawline to soften its appearance and highlight the forehead to create balance.' }
+            ]
+        };
+
+        // ==========================================
+        // Initialization and Setup
+        // ==========================================
+        
+        // Initialize the app
+        async function initializeApp() {
+            try {
+                // Initialize TensorFlow.js
+                await tf.ready();
+                
+                // Initialize face mesh model
+                faceMesh = new FaceMesh({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                    }
+                });
+                
+                // Set up face mesh detection options
+                faceMesh.setOptions({
+                    maxNumFaces: 1,
+                    refineLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                
+                // Set up the face mesh result callback
+                faceMesh.onResults(onFaceMeshResults);
+                
+                isModelReady = true;
+                console.log("Face mesh model loaded successfully");
+                statusIndicator.textContent = "Ready";
+                
+                // Setup canvas size
+                updateCanvasSize();
+                
+                // Initialize empty symmetry chart
+                initSymmetryChart();
+                
+                // Initialize event listeners for calibration sliders
+                initCalibrationControls();
+                
+            } catch (error) {
+                console.error("Error initializing app:", error);
+                showError("Failed to initialize the face detection models. Please try reloading the page.");
+            }
+        }
+
+        // Initialize calibration controls
+        function initCalibrationControls() {
+            // Forehead height slider
+            foreheadHeightSlider.addEventListener('input', function() {
+                foreheadHeightPercent = parseInt(this.value);
+                foreheadHeightValue.textContent = `${foreheadHeightPercent}%`;
+            });
+            
+            // Face width slider
+            faceWidthSlider.addEventListener('input', function() {
+                faceWidthPercent = parseInt(this.value);
+                faceWidthValue.textContent = `${faceWidthPercent}%`;
+            });
+            
+            // Face length importance slider
+            faceLengthSlider.addEventListener('input', function() {
+                faceLengthImportance = parseInt(this.value);
+                faceLengthValue.textContent = `${faceLengthImportance}%`;
+            });
+            
+            // Reset button
+            resetCalibrationButton.addEventListener('click', function() {
+                foreheadHeightSlider.value = 65;
+                faceWidthSlider.value = 60;
+                faceLengthSlider.value = 100;
+                foreheadHeightPercent = 65;
+                faceWidthPercent = 60;
+                faceLengthImportance = 100;
+                foreheadHeightValue.textContent = "65%";
+                faceWidthValue.textContent = "60%";
+                faceLengthValue.textContent = "100%";
+            });
+            
+            // Debug toggle
+            debugToggle.addEventListener('change', function() {
+                debugMode = this.checked;
+                debugPanel.style.display = debugMode ? 'block' : 'none';
+            });
+        }
+
+        // Resize the canvas to match the container size
+        function updateCanvasSize() {
+            const container = document.querySelector('.visualization-container');
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            
+            canvasElement.width = containerWidth;
+            canvasElement.height = containerHeight;
+        }
+
+        // Initialize the symmetry chart
+        function initSymmetryChart() {
+            const ctx = symmetryChartCanvas.getContext('2d');
+            
+            const gradientFill = ctx.createLinearGradient(0, 0, 0, 200);
+            gradientFill.addColorStop(0, 'rgba(93, 92, 222, 0.7)');
+            gradientFill.addColorStop(1, 'rgba(93, 92, 222, 0.1)');
+            
+            symmetryChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['Forehead', 'Eyes', 'Cheekbones', 'Nose', 'Mouth', 'Jawline'],
+                    datasets: [{
+                        label: 'Symmetry',
+                        data: [0, 0, 0, 0, 0, 0],
+                        backgroundColor: gradientFill,
+                        borderColor: 'rgba(93, 92, 222, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(93, 92, 222, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(93, 92, 222, 1)',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: {
+                                color: 'rgba(150, 150, 150, 0.3)'
+                            },
+                            grid: {
+                                color: 'rgba(150, 150, 150, 0.3)'
+                            },
+                            pointLabels: {
+                                color: getComputedStyle(document.documentElement).getPropertyValue('--text-color'),
+                                font: {
+                                    size: 12
+                                }
+                            },
+                            ticks: {
+                                display: false,
+                                stepSize: 0.2,
+                                max: 1
+                            },
+                            suggestedMin: 0,
+                            suggestedMax: 1
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Symmetry: ${Math.round(context.raw * 100)}%`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ==========================================
+        // Event Handlers
+        // ==========================================
+        
+        // Start the camera when the camera button is clicked
+        startCameraButton.addEventListener('click', async () => {
+            try {
+                if (!isModelReady) {
+                    showError("Face detection model is not ready yet. Please wait...");
+                    return;
+                }
+                
+                inputMode = 'camera';
+                showLoading(true);
+                
+                // Hide image and show video
+                imageElement.style.display = 'none';
+                videoElement.style.display = 'block';
+                
+                // Setup camera
+                if (!camera) {
+                    camera = new Camera(videoElement, {
+                        onFrame: async () => {
+                            // Throttle the detection to improve performance
+                            const now = Date.now();
+                            if (now - lastDetectionTime > DETECTION_THROTTLE_MS) {
+                                await faceMesh.send({ image: videoElement });
+                                lastDetectionTime = now;
+                            }
+                        },
+                        width: 640,
+                        height: 480
+                    });
+                }
+                
+                await camera.start();
+                statusIndicator.textContent = "Camera Active";
+                statusIndicator.classList.add('active');
+                showLoading(false);
+                
+            } catch (error) {
+                console.error("Error starting camera:", error);
+                showError("Failed to access the camera. Please ensure camera permissions are allowed.");
+                inputMode = 'none';
+                showLoading(false);
+            }
+        });
+
+        // Handle image upload
+        uploadButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', async (e) => {
+            if (e.target.files && e.target.files[0]) {
+                try {
+                    if (!isModelReady) {
+                        showError("Face detection model is not ready yet. Please wait...");
+                        return;
+                    }
+                    
+                    // Stop camera if it's running
+                    if (camera && inputMode === 'camera') {
+                        await camera.stop();
+                    }
+                    
+                    inputMode = 'image';
+                    showLoading(true);
+                    
+                    // Hide video and show image
+                    videoElement.style.display = 'none';
+                    imageElement.style.display = 'block';
+                    
+                    // Load the image
+                    const file = e.target.files[0];
+                    const imageUrl = URL.createObjectURL(file);
+                    imageElement.src = imageUrl;
+                    
+                    imageElement.onload = async () => {
+                        // Process image once loaded
+                        await processImage();
+                        statusIndicator.textContent = "Image Loaded";
+                        statusIndicator.classList.add('active');
+                        showLoading(false);
+                    };
+                    
+                } catch (error) {
+                    console.error("Error processing uploaded image:", error);
+                    showError("Failed to process the image. Please try a different image.");
+                    inputMode = 'none';
+                    showLoading(false);
+                }
+            }
+        });
+
+        // Capture button for static analysis
+        captureButton.addEventListener('click', async () => {
+            if (inputMode === 'camera') {
+                try {
+                    showLoading(true);
+                    // Draw the current video frame to a temporary canvas
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = videoElement.videoWidth;
+                    tempCanvas.height = videoElement.videoHeight;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
+                    
+                    // Process the frame for detailed analysis
+                    await faceMesh.send({ image: tempCanvas });
+                    
+                    showLoading(false);
+                } catch (error) {
+                    console.error("Error capturing frame:", error);
+                    showError("Failed to analyze current frame. Please try again.");
+                    showLoading(false);
+                }
+            } else if (inputMode === 'image') {
+                try {
+                    showLoading(true);
+                    await processImage();
+                    showLoading(false);
+                } catch (error) {
+                    console.error("Error processing image:", error);
+                    showError("Failed to analyze image. Please try again or upload a different image.");
+                    showLoading(false);
+                }
+            } else {
+                showError("Please start the camera or upload an image first.");
+            }
+        });
+
+        // Show all landmarks toggle
+        showLandmarksToggle.addEventListener('change', function() {
+            showAllLandmarks = this.checked;
+        });
+
+        // Tab navigation
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active class from all tabs
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+                
+                // Add active class to clicked tab
+                button.classList.add('active');
+                const tabId = button.getAttribute('data-tab');
+                document.getElementById(`${tabId}-tab`).classList.add('active');
+            });
+        });
+
+        // Window resize handler
+        window.addEventListener('resize', updateCanvasSize);
+
+        // ==========================================
+        // Face Detection and Analysis
+        // ==========================================
+        
+        // Process the results from the face mesh detection
+        function onFaceMeshResults(results) {
+            if (isProcessing) return;
+            isProcessing = true;
+            
+            try {
+                // Clear the canvas
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                
+                if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                    // Get the detected face landmarks
+                    const landmarks = results.multiFaceLandmarks[0];
+                    
+                    // Draw landmarks and annotations
+                    drawFaceMeshAnnotations(landmarks);
+                    
+                    // Analyze face shape with enhancements
+                    const faceShapeData = analyzeFaceShape(landmarks);
+                    
+                    // Update UI with face shape results
+                    updateFaceShapeUI(faceShapeData);
+                    
+                    // Update debug panel if enabled
+                    if (debugMode) {
+                        updateDebugPanel(faceShapeData);
+                    }
+                }
+            } catch (error) {
+                console.error("Error processing face mesh results:", error);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        // Process a static image
+        async function processImage() {
+            if (!imageElement.complete || !imageElement.src) {
+                showError("Image not loaded properly. Please try uploading again.");
+                return;
+            }
+            
+            try {
+                // Send the image to face mesh
+                await faceMesh.send({ image: imageElement });
+            } catch (error) {
+                console.error("Error processing image:", error);
+                showError("Failed to detect face in the image. Please try a different image.");
+            }
+        }
+
+        // Draw face mesh annotations on the canvas
+        function drawFaceMeshAnnotations(landmarks) {
+            // Calculate canvas-to-input ratio for proper scaling
+            const inputWidth = inputMode === 'camera' ? videoElement.videoWidth : imageElement.naturalWidth;
+            const inputHeight = inputMode === 'camera' ? videoElement.videoHeight : imageElement.naturalHeight;
+            
+            const canvasWidth = canvasElement.width;
+            const canvasHeight = canvasElement.height;
+            
+            const widthRatio = canvasWidth / inputWidth;
+            const heightRatio = canvasHeight / inputHeight;
+            
+            // Choose the smaller ratio to ensure the entire input fits in the canvas
+            const ratio = Math.min(widthRatio, heightRatio);
+            
+            // Calculate offsets to center the image in the canvas
+            const xOffset = (canvasWidth - (inputWidth * ratio)) / 2;
+            const yOffset = (canvasHeight - (inputHeight * ratio)) / 2;
+            
+            // Draw all landmarks if toggle is on
+            if (showAllLandmarks) {
+                for (let i = 0; i < landmarks.length; i++) {
+                    const landmark = landmarks[i];
+                    const x = landmark.x * inputWidth * ratio + xOffset;
+                    const y = landmark.y * inputHeight * ratio + yOffset;
+                    
+                    // Draw small dot for each landmark
+                    canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(x, y, 1, 0, 2 * Math.PI);
+                    canvasCtx.fill();
+                    
+                    // Draw landmark index for debugging
+                    if (i % 50 === 0) { // Only show every 50th index to avoid clutter
+                        canvasCtx.font = '10px Arial';
+                        canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                        canvasCtx.fillText(i.toString(), x + 3, y + 3);
+                    }
+                }
+            }
+            
+            // Draw face oval outline
+            drawConnectedPoints(landmarks, FACE_OVAL_INDICES, 'var(--face-oval)', ratio, xOffset, yOffset, inputWidth, inputHeight, true);
+            
+            // Draw forehead line
+            const foreheadY = landmarks[10].y * (foreheadHeightPercent / 100); // Adjustable forehead height
+            drawForeheadLine(landmarks, foreheadY, ratio, xOffset, yOffset, inputWidth, inputHeight);
+            
+            // Draw key measurement points
+            drawMeasurementPoints(landmarks, ratio, xOffset, yOffset, inputWidth, inputHeight);
+            
+            // Draw chin measurement
+            drawChinMeasurement(landmarks, ratio, xOffset, yOffset, inputWidth, inputHeight);
+        }
+
+        // Draw connected points for facial features
+        function drawConnectedPoints(landmarks, indices, color, ratio, xOffset, yOffset, inputWidth, inputHeight, closePath = false) {
+            canvasCtx.strokeStyle = color;
+            canvasCtx.lineWidth = 2;
+            canvasCtx.beginPath();
+            
+            for (let i = 0; i < indices.length; i++) {
+                const idx = indices[i];
+                const landmark = landmarks[idx];
+                const x = landmark.x * inputWidth * ratio + xOffset;
+                const y = landmark.y * inputHeight * ratio + yOffset;
+                
+                if (i === 0) {
+                    canvasCtx.moveTo(x, y);
+                } else {
+                    canvasCtx.lineTo(x, y);
+                }
+            }
+            
+            if (closePath) {
+                canvasCtx.closePath();
+            }
+            
+            canvasCtx.stroke();
+        }
+
+        // Draw forehead line based on configurable height
+        function drawForeheadLine(landmarks, foreheadY, ratio, xOffset, yOffset, inputWidth, inputHeight) {
+            // Find leftmost and rightmost points at the forehead height
+            let leftX = 1, rightX = 0;
+            
+            for (const idx of FOREHEAD_TOP_INDICES) {
+                const landmark = landmarks[idx];
+                if (landmark.y <= foreheadY) {
+                    if (landmark.x < leftX) leftX = landmark.x;
+                    if (landmark.x > rightX) rightX = landmark.x;
+                }
+            }
+            
+            // Draw the forehead line
+            canvasCtx.strokeStyle = 'var(--forehead-color)';
+            canvasCtx.lineWidth = 2;
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(leftX * inputWidth * ratio + xOffset, foreheadY * inputHeight * ratio + yOffset);
+            canvasCtx.lineTo(rightX * inputWidth * ratio + xOffset, foreheadY * inputHeight * ratio + yOffset);
+            canvasCtx.stroke();
+            
+            // Draw dots at endpoints
+            canvasCtx.fillStyle = 'var(--forehead-color)';
+            canvasCtx.beginPath();
+            canvasCtx.arc(leftX * inputWidth * ratio + xOffset, foreheadY * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.arc(rightX * inputWidth * ratio + xOffset, foreheadY * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            
+            // Draw label
+            canvasCtx.font = '12px Arial';
+            canvasCtx.fillStyle = 'var(--forehead-color)';
+            const midX = ((leftX + rightX) / 2) * inputWidth * ratio + xOffset;
+            const y = foreheadY * inputHeight * ratio + yOffset;
+            canvasCtx.fillText('Forehead Width', midX + 10, y - 10);
+        }
+
+        // Draw key measurement points for face shape analysis
+        function drawMeasurementPoints(landmarks, ratio, xOffset, yOffset, inputWidth, inputHeight) {
+            // Calculate the face width height point based on slider
+            const faceWidthHeight = landmarks[10].y + ((landmarks[152].y - landmarks[10].y) * (faceWidthPercent / 100));
+            
+            // Find points at the specified height for face width
+            let leftX = 1, rightX = 0;
+            for (let i = 0; i < landmarks.length; i++) {
+                const landmark = landmarks[i];
+                
+                // Only consider points on the face outline
+                if (FACE_OVAL_INDICES.includes(i)) {
+                    const yDiff = Math.abs(landmark.y - faceWidthHeight);
+                    
+                    if (yDiff < 0.03) { // Within a small range of the target height
+                        if (landmark.x < leftX && landmark.x < 0.5) leftX = landmark.x;
+                        if (landmark.x > rightX && landmark.x > 0.5) rightX = landmark.x;
+                    }
+                }
+            }
+            
+            // Draw cheekbone width line
+            const leftCheek = landmarks[123];
+            const rightCheek = landmarks[352];
+            
+            canvasCtx.strokeStyle = 'var(--cheekbone-color)';
+            canvasCtx.lineWidth = 2;
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(leftCheek.x * inputWidth * ratio + xOffset, leftCheek.y * inputHeight * ratio + yOffset);
+            canvasCtx.lineTo(rightCheek.x * inputWidth * ratio + xOffset, rightCheek.y * inputHeight * ratio + yOffset);
+            canvasCtx.stroke();
+            
+            // Draw dots for cheekbones
+            canvasCtx.fillStyle = 'var(--cheekbone-color)';
+            canvasCtx.beginPath();
+            canvasCtx.arc(leftCheek.x * inputWidth * ratio + xOffset, leftCheek.y * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.arc(rightCheek.x * inputWidth * ratio + xOffset, rightCheek.y * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            
+            // Draw label for cheekbones
+            canvasCtx.font = '12px Arial';
+            canvasCtx.fillStyle = 'var(--cheekbone-color)';
+            const cheekMidX = ((leftCheek.x + rightCheek.x) / 2) * inputWidth * ratio + xOffset;
+            const cheekMidY = ((leftCheek.y + rightCheek.y) / 2) * inputHeight * ratio + yOffset;
+            canvasCtx.fillText('Cheekbone Width', cheekMidX + 10, cheekMidY);
+            
+            // Draw face width line at specified height
+            canvasCtx.strokeStyle = 'var(--jawline-color)';
+            canvasCtx.lineWidth = 2;
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(leftX * inputWidth * ratio + xOffset, faceWidthHeight * inputHeight * ratio + yOffset);
+            canvasCtx.lineTo(rightX * inputWidth * ratio + xOffset, faceWidthHeight * inputHeight * ratio + yOffset);
+            canvasCtx.stroke();
+            
+            // Draw dots for face width
+            canvasCtx.fillStyle = 'var(--jawline-color)';
+            canvasCtx.beginPath();
+            canvasCtx.arc(leftX * inputWidth * ratio + xOffset, faceWidthHeight * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.arc(rightX * inputWidth * ratio + xOffset, faceWidthHeight * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            
+            // Draw label for face width
+            canvasCtx.font = '12px Arial';
+            canvasCtx.fillStyle = 'var(--jawline-color)';
+            const jawMidX = ((leftX + rightX) / 2) * inputWidth * ratio + xOffset;
+            const jawY = faceWidthHeight * inputHeight * ratio + yOffset;
+            canvasCtx.fillText('Face Width', jawMidX + 10, jawY);
+            
+            // Draw face height line
+            const topPoint = landmarks[10];
+            const bottomPoint = landmarks[152];
+            
+            canvasCtx.strokeStyle = 'rgba(244, 67, 54, 0.8)';
+            canvasCtx.lineWidth = 2;
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(topPoint.x * inputWidth * ratio + xOffset, topPoint.y * inputHeight * ratio + yOffset);
+            canvasCtx.lineTo(bottomPoint.x * inputWidth * ratio + xOffset, bottomPoint.y * inputHeight * ratio + yOffset);
+            canvasCtx.stroke();
+            
+            // Draw dots for face height
+            canvasCtx.fillStyle = 'rgba(244, 67, 54, 0.8)';
+            canvasCtx.beginPath();
+            canvasCtx.arc(topPoint.x * inputWidth * ratio + xOffset, topPoint.y * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.arc(bottomPoint.x * inputWidth * ratio + xOffset, bottomPoint.y * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            
+            // Draw label for face height
+            canvasCtx.font = '12px Arial';
+            canvasCtx.fillStyle = 'rgba(244, 67, 54, 0.8)';
+            const midY = ((topPoint.y + bottomPoint.y) / 2) * inputHeight * ratio + yOffset;
+            canvasCtx.fillText('Face Height', topPoint.x * inputWidth * ratio + xOffset - 100, midY);
+        }
+
+        // Draw chin measurement
+        function drawChinMeasurement(landmarks, ratio, xOffset, yOffset, inputWidth, inputHeight) {
+            // Draw chin measurement points
+            const chinPoint = landmarks[152]; // Bottom of chin
+            const leftJaw = landmarks[148];   // Left side of jaw
+            const rightJaw = landmarks[377];  // Right side of jaw
+            
+            // Draw chin triangle
+            canvasCtx.strokeStyle = 'var(--chin-color)';
+            canvasCtx.lineWidth = 2;
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(leftJaw.x * inputWidth * ratio + xOffset, leftJaw.y * inputHeight * ratio + yOffset);
+            canvasCtx.lineTo(chinPoint.x * inputWidth * ratio + xOffset, chinPoint.y * inputHeight * ratio + yOffset);
+            canvasCtx.lineTo(rightJaw.x * inputWidth * ratio + xOffset, rightJaw.y * inputHeight * ratio + yOffset);
+            canvasCtx.closePath();
+            canvasCtx.stroke();
+            
+            // Draw dots for chin measurement
+            canvasCtx.fillStyle = 'var(--chin-color)';
+            canvasCtx.beginPath();
+            canvasCtx.arc(leftJaw.x * inputWidth * ratio + xOffset, leftJaw.y * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.arc(chinPoint.x * inputWidth * ratio + xOffset, chinPoint.y * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.arc(rightJaw.x * inputWidth * ratio + xOffset, rightJaw.y * inputHeight * ratio + yOffset, 4, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            
+            // Draw label for chin shape
+            canvasCtx.font = '12px Arial';
+            canvasCtx.fillStyle = 'var(--chin-color)';
+            const labelX = ((leftJaw.x + rightJaw.x) / 2) * inputWidth * ratio + xOffset;
+            const labelY = ((leftJaw.y + rightJaw.y) / 2) * inputHeight * ratio + yOffset;
+            canvasCtx.fillText('Chin Shape', labelX, labelY - 10);
+        }
+
+        // ==========================================
+        // Face Shape Analysis Algorithm
+        // ==========================================
+        
+        // Analyze face shape based on landmarks with enhanced detection
+        function analyzeFaceShape(landmarks) {
+            // Extract key measurements with improved algorithms
+            const measurements = extractFaceMeasurements(landmarks);
+            
+            // Classify face shape
+            const faceShape = classifyFaceShape(measurements);
+            
+            // Calculate face symmetry
+            const symmetryData = calculateFaceSymmetry(landmarks);
+            
+            return {
+                measurements: measurements,
+                faceShape: faceShape,
+                symmetry: symmetryData,
+                rawLandmarks: landmarks
+            };
+        }
+
+        // Extract measurements from facial landmarks with improved algorithms
+        function extractFaceMeasurements(landmarks) {
+            // Function to calculate distance between two points
+            const distance = (p1, p2) => {
+                return Math.sqrt(
+                    Math.pow(p1.x - p2.x, 2) + 
+                    Math.pow(p1.y - p2.y, 2) + 
+                    Math.pow(p1.z - p2.z, 2)
+                );
+            };
+            
+            // Function to calculate angle between three points
+            const angle = (p1, p2, p3) => {
+                const a = distance(p2, p3);
+                const b = distance(p1, p3);
+                const c = distance(p1, p2);
+                
+                return Math.acos((a*a + c*c - b*b) / (2 * a * c)) * (180 / Math.PI);
+            };
+            
+            // Calculate face height (forehead to chin)
+            const faceHeight = distance(landmarks[10], landmarks[152]);
+            
+            // Calculate forehead width at configurable height
+            const foreheadY = landmarks[10].y * (foreheadHeightPercent / 100);
+            let leftForehead = 1, rightForehead = 0;
+            
+            for (const idx of [...FOREHEAD_TOP_INDICES, ...FOREHEAD_HAIRLINE_INDICES]) {
+                const landmark = landmarks[idx];
+                if (Math.abs(landmark.y - foreheadY) < 0.03) {
+                    if (landmark.x < leftForehead && landmark.x < 0.5) leftForehead = landmark.x;
+                    if (landmark.x > rightForehead && landmark.x > 0.5) rightForehead = landmark.x;
+                }
+            }
+            
+            // Fallback for forehead detection if points aren't found
+            if (leftForehead === 1 || rightForehead === 0) {
+                // Use horizontal distance between temples if forehead landmarks are unreliable
+                leftForehead = landmarks[67].x;
+                rightForehead = landmarks[297].x;
+            }
+            
+            const foreheadWidth = rightForehead - leftForehead;
+            
+            // Calculate face width at configurable height
+            const faceWidthHeight = landmarks[10].y + ((landmarks[152].y - landmarks[10].y) * (faceWidthPercent / 100));
+            let leftJaw = 1, rightJaw = 0;
+            
+            for (let i = 0; i < landmarks.length; i++) {
+                const landmark = landmarks[i];
+                if (Math.abs(landmark.y - faceWidthHeight) < 0.03) {
+                    if (landmark.x < leftJaw && landmark.x < 0.5) leftJaw = landmark.x;
+                    if (landmark.x > rightJaw && landmark.x > 0.5) rightJaw = landmark.x;
+                }
+            }
+            
+            const jawWidth = rightJaw - leftJaw;
+            
+            // Calculate face width (distance between cheekbones)
+            const cheekboneWidth = distance(landmarks[123], landmarks[352]);
+            
+            // Calculate face width-to-height ratio
+            const faceWidth = Math.max(foreheadWidth, jawWidth, cheekboneWidth);
+            // Apply face length importance factor
+            const faceRatio = (faceWidth / faceHeight) * (faceLengthImportance / 100);
+            
+            // Calculate jawline angle
+            const jawlineAngle = angle(landmarks[93], landmarks[152], landmarks[323]);
+            
+            // Calculate forehead width relative to face width
+            const relativeforeheadWidth = foreheadWidth / faceWidth;
+            
+            // Calculate cheekbone width relative to face width
+            const relativeCheekboneWidth = cheekboneWidth / faceWidth;
+            
+            // Calculate relative jaw width
+            const relativeJawWidth = jawWidth / faceWidth;
+            
+            // Calculate chin pointiness (ratio of chin width to jaw width)
+            const chinWidth = distance(landmarks[148], landmarks[377]);
+            const chinShape = 1 - (chinWidth / jawWidth); // Higher value = more pointed
+            
+            // Calculate face length relative to standard proportions
+            const faceLength = faceHeight / (faceWidth * 1.5); // 1.5 is the "ideal" ratio
+            
+            // Calculate hairline shape (using curvature of hairline points)
+            const hairlineShape = calculateHairlineShape(landmarks);
+            
+            // Calculate side slope (for distinguishing between oval and oblong faces)
+            const sideSlope = calculateSideSlope(landmarks);
+            
+            return {
+                [FACE_SHAPE_FEATURES.FACE_RATIO]: faceRatio,
+                [FACE_SHAPE_FEATURES.JAWLINE_ANGLE]: jawlineAngle,
+                [FACE_SHAPE_FEATURES.CHEEKBONE_WIDTH]: relativeCheekboneWidth,
+                [FACE_SHAPE_FEATURES.FOREHEAD_WIDTH]: relativeforeheadWidth,
+                [FACE_SHAPE_FEATURES.CHIN_SHAPE]: chinShape,
+                [FACE_SHAPE_FEATURES.FACE_LENGTH]: faceLength,
+                [FACE_SHAPE_FEATURES.JAW_WIDTH]: relativeJawWidth,
+                [FACE_SHAPE_FEATURES.HAIRLINE_SHAPE]: hairlineShape,
+                [FACE_SHAPE_FEATURES.SIDE_SLOPE]: sideSlope,
+                rawMeasurements: {
+                    faceHeight: faceHeight,
+                    faceWidth: faceWidth,
+                    foreheadWidth: foreheadWidth,
+                    jawWidth: jawWidth,
+                    cheekboneWidth: cheekboneWidth,
+                    chinWidth: chinWidth,
+                    sideSlope: sideSlope,
+                    faceLengthImportance: faceLengthImportance
+                }
+            };
+        }
+
+        // Calculate hairline shape (straight vs rounded)
+        function calculateHairlineShape(landmarks) {
+            // Get average height of hairline
+            let totalY = 0;
+            for (const idx of FOREHEAD_HAIRLINE_INDICES) {
+                totalY += landmarks[idx].y;
+            }
+            const avgY = totalY / FOREHEAD_HAIRLINE_INDICES.length;
+            
+            // Calculate deviation from straight line
+            let deviation = 0;
+            for (const idx of FOREHEAD_HAIRLINE_INDICES) {
+                deviation += Math.abs(landmarks[idx].y - avgY);
+            }
+            
+            // Normalize to 0-1 scale (0 = straight, 1 = very curved)
+            return Math.min(1, deviation * 20); // Scale factor to get a useful range
+        }
+
+        // Calculate side slope (how straight the sides of the face are)
+        // Lower values = straighter sides (rectangle/oblong), higher values = more curved (oval)
+        function calculateSideSlope(landmarks) {
+            // Get points along the sides of the face
+            const leftSidePoints = [landmarks[234], landmarks[93], landmarks[132], landmarks[58], landmarks[172]];
+            const rightSidePoints = [landmarks[454], landmarks[323], landmarks[361], landmarks[288], landmarks[397]];
+            
+            // Calculate average X position for each side
+            let leftAvgX = 0, rightAvgX = 0;
+            for (const point of leftSidePoints) {
+                leftAvgX += point.x;
+            }
+            for (const point of rightSidePoints) {
+                rightAvgX += point.x;
+            }
+            leftAvgX /= leftSidePoints.length;
+            rightAvgX /= rightSidePoints.length;
+            
+            // Calculate deviation from straight line
+            let leftDeviation = 0, rightDeviation = 0;
+            for (const point of leftSidePoints) {
+                leftDeviation += Math.abs(point.x - leftAvgX);
+            }
+            for (const point of rightSidePoints) {
+                rightDeviation += Math.abs(point.x - rightAvgX);
+            }
+            
+            // Average and normalize to 0-1 scale
+            const avgDeviation = (leftDeviation + rightDeviation) / (leftSidePoints.length + rightSidePoints.length);
+            return Math.min(1, avgDeviation * 30); // Scale to useful range
+        }
+
+        // Classify face shape based on measurements with improved accuracy
+        function classifyFaceShape(measurements) {
+            // Apply special handling for oblong/rectangle vs square detection
+            // This is a major improvement to fix the issue with oblong detection
+            const isLongFace = measurements[FACE_SHAPE_FEATURES.FACE_RATIO] > 1.45;
+            const hasStraightSides = measurements[FACE_SHAPE_FEATURES.SIDE_SLOPE] < 0.4;
+            
+            // Calculate match scores for each face shape
+            const scores = {};
+            
+            for (const [shapeId, shapeData] of Object.entries(FACE_SHAPES)) {
+                // Apply weight to the score if specified
+                const weight = shapeData.weight || 1.0;
+                
+                // Special boost for oblong if we detect a long face with straight sides
+                let adjustedWeight = weight;
+                if (shapeId === 'OBLONG' && isLongFace && hasStraightSides) {
+                    adjustedWeight = weight * 1.2;
+                }
+                
+                scores[shapeId] = calculateShapeMatchScore(measurements, shapeData.criteria) * adjustedWeight;
+            }
+            
+            // Find the face shape with the highest score
+            let bestMatch = null;
+            let highestScore = -1;
+            
+            for (const [shapeId, score] of Object.entries(scores)) {
+                if (score > highestScore) {
+                    highestScore = score;
+                    bestMatch = shapeId;
+                }
+            }
+            
+            // Apply confidence adjustment based on how close the top scores are
+            const sortedScores = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+            const confidenceAdjustment = sortedScores.length > 1 ? 
+                (sortedScores[0][1] - sortedScores[1][1]) / sortedScores[0][1] : 1;
+            
+            return {
+                shapeId: bestMatch,
+                shapeName: FACE_SHAPES[bestMatch].name,
+                confidence: Math.min(100, highestScore * 100 * (0.7 + 0.3 * confidenceAdjustment)),
+                allScores: scores
+            };
+        }
+
+        // Calculate how well measurements match a face shape's criteria with improved algorithm
+        function calculateShapeMatchScore(measurements, criteria) {
+            let totalScore = 0;
+            let criteriaCount = 0;
+            let criteriaScores = {};
+            
+            // For each criterion in the face shape
+            for (const [feature, range] of Object.entries(criteria)) {
+                if (measurements[feature] !== undefined) {
+                    criteriaCount++;
+                    
+                    // Calculate how well the measurement fits within the range
+                    const value = measurements[feature];
+                    
+                    let score = 0;
+                    if (value >= range.min && value <= range.max) {
+                        // Perfect match within range
+                        // Higher score for values closer to center of range
+                        const rangeCenter = (range.min + range.max) / 2;
+                        const distanceFromCenter = Math.abs(value - rangeCenter) / ((range.max - range.min) / 2);
+                        score = 1 - (distanceFromCenter * 0.2); // Small penalty for being away from center
+                    } else {
+                        // Partial match based on distance from range
+                        const distanceFromRange = value < range.min 
+                            ? range.min - value 
+                            : value - range.max;
+                        const rangeSize = range.max - range.min;
+                        
+                        // More strict partial matching with sigmoid-like falloff
+                        const relativeDist = distanceFromRange / rangeSize;
+                        score = Math.max(0, 1 - Math.pow(relativeDist * 2, 2));
+                    }
+                    
+                    criteriaScores[feature] = score;
+                    totalScore += score;
+                }
+            }
+            
+            // Return average score across all criteria
+            return criteriaCount > 0 ? totalScore / criteriaCount : 0;
+        }
+
+        // Calculate face symmetry with improved algorithm
+        function calculateFaceSymmetry(landmarks) {
+            // Function to calculate symmetry between left and right points
+            const calculatePointSymmetry = (leftIdx, rightIdx) => {
+                const left = landmarks[leftIdx];
+                const right = landmarks[rightIdx];
+                
+                // Calculate central vertical line (average x position)
+                const centerX = 0.5;
+                
+                // Calculate distance from each point to where its symmetric point should be
+                const leftDistance = Math.abs(centerX - left.x);
+                const rightDistance = Math.abs(right.x - centerX);
+                
+                // Perfect symmetry would have equal distances
+                const symmetryRatio = Math.min(leftDistance, rightDistance) / Math.max(leftDistance, rightDistance);
+                
+                // Adjust for overall face width to prevent small faces from appearing more symmetric
+                const normalizedRatio = Math.pow(symmetryRatio, 0.8); // Slight power adjustment to normalize scales
+                
+                // Normalize to [0, 1] where 1 is perfect symmetry
+                return normalizedRatio;
+            };
+            
+            // Enhanced pairs of points to check symmetry (left, right)
+            const symmetryPairs = {
+                forehead: [[70, 300], [103, 334], [54, 284], [21, 251]],
+                eyes: [[33, 263], [159, 386], [145, 374], [133, 362], [33, 263], [133, 362]],
+                cheekbones: [[123, 352], [50, 280], [93, 323], [116, 345]],
+                nose: [[64, 294], [43, 273], [47, 277], [187, 410]],
+                mouth: [[61, 291], [39, 269], [78, 308], [81, 311], [178, 398], [87, 317], [14, 394]],
+                jawline: [[172, 397], [148, 377], [176, 400], [140, 370], [135, 364], [169, 395]],
+            };
+            
+            // Calculate symmetry for each facial region
+            const symmetryScores = {};
+            let overallSymmetry = 0;
+            
+            for (const [region, pairs] of Object.entries(symmetryPairs)) {
+                let regionSymmetry = 0;
+                
+                for (const [leftIdx, rightIdx] of pairs) {
+                    regionSymmetry += calculatePointSymmetry(leftIdx, rightIdx);
+                }
+                
+                // Average symmetry for the region
+                symmetryScores[region] = regionSymmetry / pairs.length;
+                overallSymmetry += symmetryScores[region];
+            }
+            
+            // Calculate overall symmetry (average of all regions)
+            overallSymmetry /= Object.keys(symmetryPairs).length;
+            
+            return {
+                overall: overallSymmetry,
+                regions: symmetryScores
+            };
+        }
+
+        // ==========================================
+        // UI Update Functions
+        // ==========================================
+        
+        // Update UI with face shape results
+        function updateFaceShapeUI(faceShapeData) {
+            if (!faceShapeData) return;
+            
+            const { measurements, faceShape, symmetry } = faceShapeData;
+            
+            // Update face shape result
+            faceShapeResult.textContent = `${faceShape.shapeName} (${Math.round(faceShape.confidence)}% confidence)`;
+            
+            // Update measurements display
+            faceRatioElement.textContent = measurements.faceRatio.toFixed(2);
+            jawlineAngleElement.textContent = `${Math.round(measurements.jawlineAngle)}°`;
+            cheekboneWidthElement.textContent = measurements.cheekboneWidth.toFixed(2);
+            foreheadWidthElement.textContent = measurements.foreheadWidth.toFixed(2);
+            chinShapeElement.textContent = measurements.chinShape < 0.3 ? 'Rounded' : 
+                                         measurements.chinShape < 0.5 ? 'Average' : 'Pointed';
+            faceLengthElement.textContent = measurements.faceLength.toFixed(2);
+            
+            // Update symmetry score
+            const symmetryPercentage = Math.round(symmetry.overall * 100);
+            symmetryScoreElement.textContent = `${symmetryPercentage}%`;
+            
+            // Update symmetry chart
+            updateSymmetryChart(symmetry.regions);
+            
+            // Update style tips based on face shape
+            updateStyleTips(faceShape.shapeName);
+            
+            // Update shape scores display
+            updateShapeScores(faceShape.allScores);
+        }
+
+        // Update shape scores display
+        function updateShapeScores(scores) {
+            shapeScoresContainer.innerHTML = '';
+            
+            // Sort scores from highest to lowest
+            const sortedScores = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+            
+            for (const [shapeId, score] of sortedScores) {
+                const percentage = Math.round(score * 100);
+                const shapeName = FACE_SHAPES[shapeId].name;
+                
+                const scoreElement = document.createElement('div');
+                scoreElement.className = 'score-item';
+                scoreElement.textContent = `${shapeName}: ${percentage}%`;
+                
+                // Color coding for scores
+                if (percentage >= 80) {
+                    scoreElement.style.backgroundColor = 'rgba(76, 175, 80, 0.3)'; // Green
+                    scoreElement.style.border = '1px solid rgba(76, 175, 80, 0.7)';
+                } else if (percentage >= 60) {
+                    scoreElement.style.backgroundColor = 'rgba(255, 193, 7, 0.3)'; // Yellow
+                    scoreElement.style.border = '1px solid rgba(255, 193, 7, 0.7)';
+                }
+                
+                shapeScoresContainer.appendChild(scoreElement);
+            }
+        }
+
+        // Update debug panel
+        function updateDebugPanel(faceShapeData) {
+            if (!debugMode) return;
+            
+            const { measurements, faceShape, rawLandmarks } = faceShapeData;
+            
+            const debugData = {
+                measurementValues: measurements,
+                faceShapeScores: faceShape.allScores,
+                rawMeasurements: measurements.rawMeasurements,
+                calibrationSettings: {
+                    foreheadHeight: foreheadHeightPercent,
+                    faceWidth: faceWidthPercent,
+                    faceLengthImportance: faceLengthImportance
+                }
+            };
+            
+            debugPanel.innerHTML = `<pre>${JSON.stringify(debugData, null, 2)}</pre>`;
+        }
+
+        // Update symmetry chart with data
+        function updateSymmetryChart(regionScores) {
+            if (!symmetryChart) return;
+            
+            const symmetryData = [
+                regionScores.forehead,
+                regionScores.eyes,
+                regionScores.cheekbones,
+                regionScores.nose,
+                regionScores.mouth,
+                regionScores.jawline
+            ];
+            
+            symmetryChart.data.datasets[0].data = symmetryData;
+            symmetryChart.update();
+        }
+
+        // Update style tips based on face shape
+        function updateStyleTips(faceShapeName) {
+            if (!faceShapeName || !STYLE_TIPS[faceShapeName]) {
+                dynamicTipsElement.innerHTML = '<p class="help-text">No style tips available for this face shape</p>';
+                return;
+            }
+            
+            const tips = STYLE_TIPS[faceShapeName];
+            let tipsHTML = `<h4>Style Tips for ${faceShapeName} Faces</h4>`;
+            
+            for (const tip of tips) {
+                tipsHTML += `
+                <div class="tip-card">
+                    <div class="tip-title">${tip.title}</div>
+                    <div class="tip-description">${tip.description}</div>
+                </div>`;
+            }
+            
+            dynamicTipsElement.innerHTML = tipsHTML;
+        }
+
+        // Show or hide loading overlay
+        function showLoading(isLoading) {
+            loadingOverlay.style.display = isLoading ? 'flex' : 'none';
+        }
+
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            
+            // Hide error after 5 seconds
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 5000);
+        }
+
+        // ==========================================
+        // Initialize the app
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await initializeApp();
+            } catch (error) {
+                console.error("Error during initialization:", error);
+                showError("Failed to initialize the application. Please try reloading the page.");
+            }
+        });
+    </script>
+</body>
+</html>
