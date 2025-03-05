@@ -1,3 +1,28 @@
+const videoElement = document.createElement("video");
+videoElement.setAttribute("autoplay", "");
+videoElement.setAttribute("playsinline", "");
+document.body.appendChild(videoElement);
+
+navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+    videoElement.srcObject = stream;
+});
+
+const faceMesh = new FaceMesh({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+});
+faceMesh.setOptions({ selfieMode: true, maxNumFaces: 1, refineLandmarks: true });
+faceMesh.onResults((results) => {
+    console.log(results.multiFaceLandmarks); // Check if landmarks are detected
+});
+
+const camera = new Camera(videoElement, {
+    onFrame: async () => {
+        await faceMesh.send({ image: videoElement });
+    },
+    width: 640,
+    height: 480,
+});
+camera.start();
 // Function to Convert WebP to PNG Before Processing
 function convertWebPToPng(webpFile, callback) {
     const img = new Image();
